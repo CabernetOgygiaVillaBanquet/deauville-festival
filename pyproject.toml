@@ -1,0 +1,10 @@
+[project]
+name = "deauville-festival"
+version = "0.1.0"
+description = "Deauville Festival du Rire backend"
+readme = "README.md"
+authors = [
+    { name = "Nicolas Cholin", email = "146072081+CabernetOgygiaVillaBanquet@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = []
