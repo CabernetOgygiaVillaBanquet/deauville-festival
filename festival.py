@@ -70,6 +70,11 @@ class Artist:
         self.photo_url = photo_url or extra.get("photo_url", "")
         self.extra = extra
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Artist):
+            return False
+        return self.slug == other.slug
+
     def to_dict(self) -> dict[str, Any]:
         data = {
             "slug": self.slug,
@@ -154,6 +159,11 @@ class Performance:
         time_compact = f"{self.start_datetime:%H%M}"
         return f"{self.venue}-{self.start_datetime:%Y-%m-%d}-{time_compact}"
 
+    def __lt__(self, other: "Performance") -> bool:
+        if self.start_datetime != other.start_datetime:
+            return self.start_datetime < other.start_datetime
+        return self.venue < other.venue
+
     def involves(self, artist_slug: str) -> str | None:
         if self.kind == "solo" and self.artist == artist_slug:
             return "solo"
@@ -225,7 +235,9 @@ class Performance:
             data["summary"] = f"hosted by {host_name}, with {acts_str}"
 
         elif self.kind == "workshop":
-            teacher_name = artists_map[self.teacher].name if self.teacher and self.teacher in artists_map else self.teacher
+            teacher_name = (
+                artists_map[self.teacher].name if self.teacher and self.teacher in artists_map else self.teacher
+            )
             data["teacher"] = self.teacher
             data["max_participants"] = self.max_participants or 0
             data["participants"] = self.participants
@@ -258,15 +270,28 @@ class Performance:
         return raw
 
 
-@dataclass
 class Festival:
-    name: str
-    first_day: str
-    last_day: str
-    venues: list[Venue]
-    artists: list[Artist]
-    performances: list[Performance]
-    extra: dict[str, Any] = field(default_factory=dict)
+    def __init__(
+        self,
+        name: str,
+        first_day: str,
+        last_day: str,
+        venues: list[Venue],
+        artists: list[Artist],
+        performances: list[Performance],
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        self.name = name
+        self.first_day = first_day
+        self.last_day = last_day
+        self.venues = venues
+        self.artists = artists
+        self._performances = list(performances)
+        self.extra = extra or {}
+
+    @property
+    def performances(self) -> list[Performance]:
+        return list(self._performances)
 
     @property
     def venues_map(self) -> dict[str, Venue]:
@@ -288,7 +313,7 @@ class Festival:
         return day_list
 
     def find_performance(self, perf_id: str) -> Performance | None:
-        for p in self.performances:
+        for p in self._performances:
             if p.id == perf_id:
                 return p
         return None
@@ -308,7 +333,9 @@ class Festival:
                 raise ValueError(f"Unknown artist '{a_slug}'.")
 
         if not (1 <= new_perf.duration_minutes <= 360):
-            raise ValueError(f"Duration must be between 1 and 360 minutes (got {new_perf.duration_minutes}).")
+            raise ValueError(
+                f"Duration must be between 1 and 360 minutes (got {new_perf.duration_minutes})."
+            )
 
         first_d = date.fromisoformat(self.first_day)
         last_d = date.fromisoformat(self.last_day)
@@ -322,7 +349,7 @@ class Festival:
         v_name = self.venues_map[new_perf.venue].name
         new_involved = new_perf.get_involved_artists()
 
-        for ex in self.performances:
+        for ex in self._performances:
             ex_s = ex.start_datetime
             ex_e = ex.end_datetime
 
@@ -341,20 +368,44 @@ class Festival:
 
     def add_performance(self, perf: Performance) -> None:
         self.check_rules(perf)
-        self.performances.append(perf)
+        self._performances.append(perf)
 
     def cancel_performance(self, perf_id: str) -> str:
         idx = None
         title = ""
-        for i, p in enumerate(self.performances):
+        for i, p in enumerate(self._performances):
             if p.id == perf_id:
                 idx = i
                 title = p.title
                 break
         if idx is None:
             raise ValueError(f"No performance with ID '{perf_id}'.")
-        self.performances.pop(idx)
+        self._performances.pop(idx)
         return title
+
+    def now_playing(self, moment: datetime) -> list[Performance]:
+        current = [p for p in self._performances if p.start_datetime <= moment < p.end_datetime]
+        return sorted(current)
+
+    def up_next(self, moment: datetime, limit: int = 3) -> list[Performance]:
+        upcoming = [p for p in self._performances if p.start_datetime > moment]
+        return sorted(upcoming)[:limit]
+
+    def programme_for_day(self, day: date, venue_slug: str | None = None) -> list[Performance]:
+        day_str = day.isoformat()
+        perfs = [p for p in self._performances if p.festival_day == day_str]
+        if venue_slug:
+            perfs = [p for p in perfs if p.venue == venue_slug]
+        return sorted(perfs)
+
+    def artist_performances(self, artist_slug: str) -> list[tuple[Performance, str]]:
+        appearances = []
+        for p in self._performances:
+            role = p.involves(artist_slug)
+            if role:
+                appearances.append((p, role))
+        appearances.sort(key=lambda item: item[0])
+        return appearances
 
     def to_dict(self) -> dict[str, Any]:
         data = {
@@ -363,14 +414,13 @@ class Festival:
             "last_day": self.last_day,
             "venues": [v.to_dict() for v in self.venues],
             "artists": [a.to_dict() for a in self.artists],
-            "performances": [p.to_dict() for p in self.performances],
+            "performances": [p.to_dict() for p in self._performances],
         }
         data.update(self.extra)
         return data
 
 
 def load_festival(path: str = "data/festival.json") -> Festival:
-    """Load festival data into typed domain objects."""
     p = Path(path)
     if not p.exists():
         raise FileNotFoundError(f"Festival file '{path}' not found.")
@@ -401,6 +451,5 @@ def load_festival(path: str = "data/festival.json") -> Festival:
 
 
 def save_festival(festival: Festival, path: str = "data/festival.json") -> None:
-    """Persist domain objects back to JSON."""
     with open(Path(path), "w", encoding="utf-8") as f:
         json.dump(festival.to_dict(), f, ensure_ascii=False, indent=2)
