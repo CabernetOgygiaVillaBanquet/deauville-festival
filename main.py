@@ -1,138 +1,103 @@
 from datetime import date, datetime
 import sys
-from typing import Any
 
 from festival import (
-    check_performance_rules,
-    end_of,
-    festival_day_of,
-    get_artists_map,
-    get_venues_list,
-    get_venues_map,
+    Performance,
     load_festival,
-    performance_id,
     save_festival,
-    start_of,
 )
 
 
-def print_summary(festival: dict[str, Any]) -> None:
-    name = festival["name"]
-    first_day = festival["first_day"]
-    last_day = festival["last_day"]
-    venues_count = len(festival["venues"])
-    artists_count = len(festival["artists"])
-    performances_count = len(festival["performances"])
-
-    print(f"{name}")
-    print(f"From {first_day} to {last_day}")
-    print(f"{venues_count} venues, {artists_count} artists, {performances_count} performances")
+def print_summary(festival) -> None:
+    print(f"{festival.name}")
+    print(f"From {festival.first_day} to {festival.last_day}")
+    print(f"{len(festival.venues)} venues, {len(festival.artists)} artists, {len(festival.performances)} performances")
 
 
-def print_venues(festival: dict[str, Any]) -> None:
-    venues = get_venues_list(festival)
-    total_seats = sum(v["capacity"] for v in venues)
-    for v in venues:
-        print(f"{v['slug']}: {v['name']}, {v['capacity']} seats")
+def print_venues(festival) -> None:
+    total_seats = sum(v.capacity for v in festival.venues)
+    for v in festival.venues:
+        print(f"{v.slug}: {v.name}, {v.capacity} seats")
     print(f"Total: {total_seats} seats")
 
 
-def print_programme(festival: dict[str, Any], day_str: str) -> None:
+def print_programme(festival, day_str: str) -> None:
     try:
         target_date = date.fromisoformat(day_str)
     except ValueError as e:
         raise ValueError(f"'{day_str}' is not a day, use YYYY-MM-DD.") from e
 
-    venues_map = get_venues_map(festival)
-    day_perfs = [p for p in festival["performances"] if festival_day_of(p) == target_date]
-
+    day_perfs = [p for p in festival.performances if p.festival_day == day_str]
     if not day_perfs:
-        available_days = sorted({str(festival_day_of(p)) for p in festival["performances"]})
+        available_days = sorted({p.festival_day for p in festival.performances})
         print(f"No performance on '{day_str}'. Days: {', '.join(available_days)}")
         return
 
-    day_perfs.sort(key=start_of)
+    day_perfs.sort(key=lambda p: p.start_datetime)
     formatted_date = f"{target_date:%A %d %B}".replace(" 0", " ")
     print(f"Programme for {formatted_date}:")
 
     for perf in day_perfs:
-        s = start_of(perf)
-        e = end_of(perf)
+        s = perf.start_datetime
+        e = perf.end_datetime
         time_slot = f"{s:%H:%M}-{e:%H:%M}"
-        venue_obj = venues_map.get(perf["venue"])
-        venue_name = venue_obj["name"] if venue_obj else perf["venue"]
-        print(f"{time_slot} | {venue_name} | {perf['title']} ({perf['kind']})")
+        venue_obj = festival.venues_map.get(perf.venue)
+        v_name = venue_obj.name if venue_obj else perf.venue
+        print(f"{time_slot} | {v_name} | {perf.title} ({perf.kind})")
 
 
-def print_artist(festival: dict[str, Any], artist_slug: str) -> None:
-    artists_map = get_artists_map(festival)
-    if artist_slug not in artists_map:
+def print_artist(festival, artist_slug: str) -> None:
+    artist = festival.find_artist(artist_slug)
+    if not artist:
         raise ValueError(f"No artist '{artist_slug}'.")
 
-    artist_name = artists_map[artist_slug]["name"]
-    venues_map = get_venues_map(festival)
-
-    appearances: list[tuple[datetime, dict[str, Any], str]] = []
-    for perf in festival["performances"]:
-        kind = perf.get("kind")
-        role = None
-
-        if kind == "solo" and perf.get("artist") == artist_slug:
-            role = "solo"
-        elif kind == "lineup":
-            if perf.get("host") == artist_slug:
-                role = "host"
-            elif artist_slug in perf.get("acts", []):
-                role = "act"
-        elif kind == "workshop" and perf.get("teacher") == artist_slug:
-            role = "teacher"
-
+    appearances: list[tuple[datetime, Performance, str]] = []
+    for perf in festival.performances:
+        role = perf.involves(artist_slug)
         if role:
-            appearances.append((start_of(perf), perf, role))
+            appearances.append((perf.start_datetime, perf, role))
 
     appearances.sort(key=lambda item: item[0])
-    print(artist_name)
+    print(artist.name)
     for _, perf, role in appearances:
-        f_day = festival_day_of(perf)
+        f_day = date.fromisoformat(perf.festival_day)
         day_prefix = f"{f_day:%a %d}".replace(" 0", " ")
-        s = start_of(perf)
-        e = end_of(perf)
+        s = perf.start_datetime
+        e = perf.end_datetime
         time_slot = f"{s:%H:%M}-{e:%H:%M}"
-        venue_obj = venues_map.get(perf["venue"])
-        venue_name = venue_obj["name"] if venue_obj else perf["venue"]
-        print(f"{day_prefix} {time_slot} | {venue_name} | {perf['title']} ({role})")
+        v_obj = festival.venues_map.get(perf.venue)
+        v_name = v_obj.name if v_obj else perf.venue
+        print(f"{day_prefix} {time_slot} | {v_name} | {perf.title} ({role})")
 
 
-def print_now(festival: dict[str, Any], moment_str: str) -> None:
+def print_now(festival, moment_str: str) -> None:
     try:
         target_moment = datetime.fromisoformat(moment_str)
     except ValueError as e:
         raise ValueError(f"'{moment_str}' is not a valid ISO datetime (use YYYY-MM-DDTHH:MM).") from e
 
-    venues_map = get_venues_map(festival)
-    perfs = festival["performances"]
-
-    on_stage = [p for p in perfs if start_of(p) <= target_moment < end_of(p)]
-    up_next = [p for p in perfs if start_of(p) > target_moment]
-    up_next.sort(key=start_of)
+    perfs = festival.performances
+    on_stage = [p for p in perfs if p.start_datetime <= target_moment < p.end_datetime]
+    up_next = [p for p in perfs if p.start_datetime > target_moment]
+    up_next.sort(key=lambda p: p.start_datetime)
 
     time_display = target_moment.strftime("%Y-%m-%d %H:%M")
     print(f"On stage at {time_display}:")
     for p in on_stage:
-        v_obj = venues_map.get(p["venue"])
-        v_name = v_obj["name"] if v_obj else p["venue"]
-        print(f"- {p['title']} at {v_name}, until {end_of(p):%H:%M}")
+        v_obj = festival.venues_map.get(p.venue)
+        v_name = v_obj.name if v_obj else p.venue
+        print(f"- {p.title} at {v_name}, until {p.end_datetime:%H:%M}")
 
     print("Up next:")
     for p in up_next[:3]:
-        s = start_of(p)
-        e = end_of(p)
-        v_obj = venues_map.get(p["venue"])
-        v_name = v_obj["name"] if v_obj else p["venue"]
-        print(f"- {s:%H:%M}-{e:%H:%M} | {v_name} | {p['title']} ({p['kind']})")
+        s = p.start_datetime
+        e = p.end_datetime
+        v_obj = festival.venues_map.get(p.venue)
+        v_name = v_obj.name if v_obj else p.venue
+        print(f"- {s:%H:%M}-{e:%H:%M} | {v_name} | {p.title} ({p.kind})")
 
 
-def add_solo_interactive(festival: dict[str, Any]) -> None:
+def add_solo_interactive(festival) -> None:
     title = input("Title: ").strip()
     if not title:
         raise ValueError("Title cannot be empty.")
@@ -151,38 +116,22 @@ def add_solo_interactive(festival: dict[str, Any]) -> None:
         raise ValueError(f"'{duration_raw}' is not a number of minutes.")
     duration = int(duration_raw)
 
-    new_perf = {
-        "kind": "solo",
-        "title": title,
-        "artist": artist,
-        "venue": venue,
-        "start": start_raw,
-        "duration_minutes": duration,
-        "description": "",
-    }
+    new_perf = Performance(
+        kind="solo",
+        title=title,
+        venue=venue,
+        start=start_raw,
+        duration_minutes=duration,
+        artist=artist,
+    )
 
-    check_performance_rules(festival, new_perf)
-    festival["performances"].append(new_perf)
+    festival.add_performance(new_perf)
     save_festival(festival)
-
-    new_id = performance_id(new_perf)
-    print(f"Added: {new_id}")
+    print(f"Added: {new_perf.id}")
 
 
-def cancel_performance(festival: dict[str, Any], perf_id: str) -> None:
-    matching_idx = None
-    cancelled_title = None
-
-    for i, p in enumerate(festival["performances"]):
-        if performance_id(p) == perf_id:
-            matching_idx = i
-            cancelled_title = p["title"]
-            break
-
-    if matching_idx is None:
-        raise ValueError(f"No performance with ID '{perf_id}'.")
-
-    festival["performances"].pop(matching_idx)
+def cancel_performance_cli(festival, perf_id: str) -> None:
+    cancelled_title = festival.cancel_performance(perf_id)
     save_festival(festival)
     print(f"Cancelled: {cancelled_title}")
 
@@ -224,7 +173,7 @@ def main() -> None:
         elif args[0] == "cancel":
             if len(args) < 2:
                 raise ValueError("Missing performance ID argument.")
-            cancel_performance(festival, args[1])
+            cancel_performance_cli(festival, args[1])
         else:
             print_usage()
 
