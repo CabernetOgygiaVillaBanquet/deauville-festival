@@ -1,144 +1,22 @@
-from datetime import date, datetime, timedelta
-import json
-from pathlib import Path
-import re
+from datetime import date, datetime
 import sys
 from typing import Any
-import unicodedata
 
-
-def slugify(text: str) -> str:
-    """Normalize text into a clean URL-friendly slug."""
-    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
-    text = text.lower()
-    text = re.sub(r"[^a-z0-9]+", "-", text)
-    return text.strip("-")
-
-
-def load_festival(path: str = "data/festival.json") -> dict[str, Any]:
-    """Load festival data from JSON file with specific error handling."""
-    p = Path(path)
-    if not p.exists():
-        raise FileNotFoundError(f"Festival file '{path}' not found.")
-    try:
-        with open(p, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Corrupted festival data file: {e}") from e
-
-
-def save_festival(festival: dict[str, Any], path: str = "data/festival.json") -> None:
-    """Save festival data to JSON file with UTF-8 and formatting."""
-    with open(Path(path), "w", encoding="utf-8") as f:
-        json.dump(festival, f, ensure_ascii=False, indent=2)
-
-
-def get_venues_map(venues: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    """Return a mapping of venue slug -> venue dict."""
-    return {slugify(v["name"]): v for v in venues}
-
-
-def get_artists_map(artists: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    """Return a mapping of artist slug -> artist dict."""
-    return {a.get("slug") or slugify(a["name"]): a for a in artists}
-
-
-def start_of(perf: dict[str, Any]) -> datetime:
-    """Return the start datetime of a performance."""
-    return datetime.fromisoformat(perf["start"])
-
-
-def end_of(perf: dict[str, Any]) -> datetime:
-    """Return the end datetime of a performance."""
-    return start_of(perf) + timedelta(minutes=perf["duration_minutes"])
-
-
-def festival_day_of(perf: dict[str, Any]) -> date:
-    """A festival day ends at 06:00: subtract 6 hours from start."""
-    return (start_of(perf) - timedelta(hours=6)).date()
-
-
-def performance_id(perf: dict[str, Any]) -> str:
-    """Construct unique id: <venue-slug>-YYYY-MM-DD-HHMM."""
-    s = start_of(perf)
-    time_compact = f"{s:%H%M}"
-    return f"{perf['venue']}-{s:%Y-%m-%d}-{time_compact}"
-
-
-def get_involved_artists(perf: dict[str, Any]) -> list[str]:
-    """Return list of all artist slugs involved in a performance."""
-    kind = perf.get("kind")
-    if kind == "solo":
-        artist = perf.get("artist")
-        return [artist] if artist else []
-    if kind == "lineup":
-        artists = []
-        if perf.get("host"):
-            artists.append(perf["host"])
-        artists.extend(perf.get("acts", []))
-        return artists
-    if kind == "workshop":
-        teacher = perf.get("teacher")
-        return [teacher] if teacher else []
-    return []
-
-
-def overlaps_with_gap(s1: datetime, e1: datetime, s2: datetime, e2: datetime, gap_minutes: int = 30) -> bool:
-    """Check if two time intervals conflict considering a minimum 30 min gap."""
-    gap = timedelta(minutes=gap_minutes)
-    return s1 < e2 + gap and s2 < e1 + gap
-
-
-def check_performance_rules(festival: dict[str, Any], new_perf: dict[str, Any]) -> None:
-    """Validate all festival rules before scheduling a performance."""
-    venues_map = get_venues_map(festival["venues"])
-    artists_map = get_artists_map(festival["artists"])
-
-    venue_slug = new_perf["venue"]
-    if venue_slug not in venues_map:
-        raise ValueError(f"Unknown venue '{venue_slug}'.")
-
-    involved = get_involved_artists(new_perf)
-    for a_slug in involved:
-        if a_slug not in artists_map:
-            raise ValueError(f"Unknown artist '{a_slug}'.")
-
-    duration = new_perf["duration_minutes"]
-    if not (1 <= duration <= 360):
-        raise ValueError(f"Duration must be between 1 and 360 minutes (got {duration}).")
-
-    perf_day = festival_day_of(new_perf)
-    first_day = date.fromisoformat(festival["first_day"])
-    last_day = date.fromisoformat(festival["last_day"])
-    if not (first_day <= perf_day <= last_day):
-        raise ValueError(f"{perf_day} is not a day of the festival.")
-
-    new_s = start_of(new_perf)
-    new_e = end_of(new_perf)
-    venue_name = venues_map[venue_slug]["name"]
-
-    for existing in festival["performances"]:
-        ex_s = start_of(existing)
-        ex_e = end_of(existing)
-
-        # 30-minute venue turnaround gap rule
-        if existing["venue"] == venue_slug:
-            if overlaps_with_gap(new_s, new_e, ex_s, ex_e, gap_minutes=30):
-                raise ValueError(
-                    f"{venue_name} is busy with {existing['title']} ({ex_s:%Y-%m-%d %H:%M}-{ex_e:%H:%M})."
-                )
-
-        # 30-minute artist turnaround gap rule
-        ex_involved = get_involved_artists(existing)
-        for a_slug in involved:
-            if a_slug in ex_involved:
-                if overlaps_with_gap(new_s, new_e, ex_s, ex_e, gap_minutes=30):
-                    a_name = artists_map[a_slug]["name"]
-                    raise ValueError(f"{a_name} is on stage in {existing['title']}.")
+from festival import (
+    check_performance_rules,
+    end_of,
+    festival_day_of,
+    get_artists_map,
+    get_venues_list,
+    get_venues_map,
+    load_festival,
+    performance_id,
+    save_festival,
+    start_of,
+)
 
 
 def print_summary(festival: dict[str, Any]) -> None:
-    """Print the festival overview (Step 00)."""
     name = festival["name"]
     first_day = festival["first_day"]
     last_day = festival["last_day"]
@@ -152,24 +30,20 @@ def print_summary(festival: dict[str, Any]) -> None:
 
 
 def print_venues(festival: dict[str, Any]) -> None:
-    """Print venue list with slug and capacity, followed by total seats."""
-    total_seats = 0
-    for v in festival["venues"]:
-        slug = slugify(v["name"])
-        seats = v.get("capacity", 0)
-        total_seats += seats
-        print(f"{slug}: {v['name']}, {seats} seats")
+    venues = get_venues_list(festival)
+    total_seats = sum(v["capacity"] for v in venues)
+    for v in venues:
+        print(f"{v['slug']}: {v['name']}, {v['capacity']} seats")
     print(f"Total: {total_seats} seats")
 
 
 def print_programme(festival: dict[str, Any], day_str: str) -> None:
-    """Print the programme for a festival day."""
     try:
         target_date = date.fromisoformat(day_str)
     except ValueError as e:
         raise ValueError(f"'{day_str}' is not a day, use YYYY-MM-DD.") from e
 
-    venues_map = get_venues_map(festival["venues"])
+    venues_map = get_venues_map(festival)
     day_perfs = [p for p in festival["performances"] if festival_day_of(p) == target_date]
 
     if not day_perfs:
@@ -187,19 +61,16 @@ def print_programme(festival: dict[str, Any], day_str: str) -> None:
         time_slot = f"{s:%H:%M}-{e:%H:%M}"
         venue_obj = venues_map.get(perf["venue"])
         venue_name = venue_obj["name"] if venue_obj else perf["venue"]
-        title = perf["title"]
-        kind = perf["kind"]
-        print(f"{time_slot} | {venue_name} | {title} ({kind})")
+        print(f"{time_slot} | {venue_name} | {perf['title']} ({perf['kind']})")
 
 
 def print_artist(festival: dict[str, Any], artist_slug: str) -> None:
-    """Print an artist's scheduled performances."""
-    artists_map = get_artists_map(festival["artists"])
+    artists_map = get_artists_map(festival)
     if artist_slug not in artists_map:
         raise ValueError(f"No artist '{artist_slug}'.")
 
     artist_name = artists_map[artist_slug]["name"]
-    venues_map = get_venues_map(festival["venues"])
+    venues_map = get_venues_map(festival)
 
     appearances: list[tuple[datetime, dict[str, Any], str]] = []
     for perf in festival["performances"]:
@@ -233,13 +104,12 @@ def print_artist(festival: dict[str, Any], artist_slug: str) -> None:
 
 
 def print_now(festival: dict[str, Any], moment_str: str) -> None:
-    """Print shows currently on stage and upcoming ones."""
     try:
         target_moment = datetime.fromisoformat(moment_str)
     except ValueError as e:
         raise ValueError(f"'{moment_str}' is not a valid ISO datetime (use YYYY-MM-DDTHH:MM).") from e
 
-    venues_map = get_venues_map(festival["venues"])
+    venues_map = get_venues_map(festival)
     perfs = festival["performances"]
 
     on_stage = [p for p in perfs if start_of(p) <= target_moment < end_of(p)]
@@ -263,7 +133,6 @@ def print_now(festival: dict[str, Any], moment_str: str) -> None:
 
 
 def add_solo_interactive(festival: dict[str, Any]) -> None:
-    """Interactively collect and schedule a new solo show."""
     title = input("Title: ").strip()
     if not title:
         raise ValueError("Title cannot be empty.")
@@ -301,7 +170,6 @@ def add_solo_interactive(festival: dict[str, Any]) -> None:
 
 
 def cancel_performance(festival: dict[str, Any], perf_id: str) -> None:
-    """Cancel a performance by its calculated ID."""
     matching_idx = None
     cancelled_title = None
 
@@ -320,7 +188,6 @@ def cancel_performance(festival: dict[str, Any], perf_id: str) -> None:
 
 
 def print_usage() -> None:
-    """Print CLI usage guide."""
     print("Usage:")
     print("  uv run main.py")
     print("  uv run main.py venues")
