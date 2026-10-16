@@ -2,7 +2,7 @@ from datetime import date, datetime
 import sys
 
 from festival import (
-    Performance,
+    SoloShow,
     load_festival,
     save_festival,
 )
@@ -51,15 +51,9 @@ def print_artist(festival, artist_slug: str) -> None:
     if not artist:
         raise ValueError(f"No artist '{artist_slug}'.")
 
-    appearances: list[tuple[datetime, Performance, str]] = []
-    for perf in festival.performances:
-        role = perf.involves(artist_slug)
-        if role:
-            appearances.append((perf.start_datetime, perf, role))
-
-    appearances.sort(key=lambda item: item[0])
+    appearances = festival.artist_performances(artist_slug)
     print(artist.name)
-    for _, perf, role in appearances:
+    for perf, role in appearances:
         f_day = date.fromisoformat(perf.festival_day)
         day_prefix = f"{f_day:%a %d}".replace(" 0", " ")
         s = perf.start_datetime
@@ -76,10 +70,8 @@ def print_now(festival, moment_str: str) -> None:
     except ValueError as e:
         raise ValueError(f"'{moment_str}' is not a valid ISO datetime (use YYYY-MM-DDTHH:MM).") from e
 
-    perfs = festival.performances
-    on_stage = [p for p in perfs if p.start_datetime <= target_moment < p.end_datetime]
-    up_next = [p for p in perfs if p.start_datetime > target_moment]
-    up_next.sort(key=lambda p: p.start_datetime)
+    on_stage = festival.now_playing(target_moment)
+    up_next = festival.up_next(target_moment, limit=3)
 
     time_display = target_moment.strftime("%Y-%m-%d %H:%M")
     print(f"On stage at {time_display}:")
@@ -89,7 +81,7 @@ def print_now(festival, moment_str: str) -> None:
         print(f"- {p.title} at {v_name}, until {p.end_datetime:%H:%M}")
 
     print("Up next:")
-    for p in up_next[:3]:
+    for p in up_next:
         s = p.start_datetime
         e = p.end_datetime
         v_obj = festival.venues_map.get(p.venue)
@@ -116,8 +108,7 @@ def add_solo_interactive(festival) -> None:
         raise ValueError(f"'{duration_raw}' is not a number of minutes.")
     duration = int(duration_raw)
 
-    new_perf = Performance(
-        kind="solo",
+    new_perf = SoloShow(
         title=title,
         venue=venue,
         start=start_raw,

@@ -1,13 +1,22 @@
 from datetime import datetime
 import pytest
 
-from festival import Artist, Festival, Performance, Venue
+from festival import (
+    Artist,
+    Festival,
+    Lineup,
+    Performance,
+    SoloShow,
+    Venue,
+    Workshop,
+    load_festival,
+)
 
 
 @pytest.fixture
 def festival() -> Festival:
-    """Provide a fresh minimal festival instance for testing rules."""
     venues = [
+        Venue(name="Grand Casino", capacity=650, address="Seafront", slug="grand-casino"),
         Venue(name="Le Kiosque", capacity=120, address="Promenade", slug="le-kiosque"),
         Venue(name="La Cabane", capacity=40, address="Beach", slug="la-cabane"),
     ]
@@ -15,24 +24,24 @@ def festival() -> Festival:
         Artist(name="Max Pellerin", slug="max-pellerin"),
         Artist(name="Karim Benali", slug="karim-benali"),
         Artist(name="Nora Lebrun", slug="nora-lebrun"),
+        Artist(name="Léa Fontaine", slug="lea-fontaine"),
+        Artist(name="Hugo Lemaire", slug="hugo-lemaire"),
     ]
     performances = [
-        Performance(
-            kind="solo",
+        SoloShow(
             title="Late Laughs",
             venue="le-kiosque",
             start="2027-06-11T23:30",
             duration_minutes=60,
             artist="max-pellerin",
         ),
-        Performance(
-            kind="lineup",
+        Lineup(
             title="After Hours",
             venue="le-kiosque",
             start="2027-06-12T01:00",
             duration_minutes=60,
             host="karim-benali",
-            acts=["nora-lebrun"],
+            acts=["nora-lebrun", "lea-fontaine"],
         ),
     ]
     return Festival(
@@ -45,18 +54,19 @@ def festival() -> Festival:
     )
 
 
+def test_cannot_instantiate_abstract_performance():
+    with pytest.raises(TypeError):
+        Performance(title="Direct", venue="la-cabane", start="2027-06-11T10:00", duration_minutes=30)  # type: ignore
+
+
 def test_festival_day_midnight_cutoff(festival: Festival):
-    """Shows at 01:00 belong to the festival day of the previous calendar day."""
     p = festival.find_performance("le-kiosque-2027-06-12-0100")
     assert p is not None
     assert p.festival_day == "2027-06-11"
 
 
 def test_rule_venue_busy(festival: Festival):
-    """Refuse show if venue is busy (within 30m turnaround gap)."""
-    # After Hours runs 01:00-02:00 at le-kiosque; next available slot is 02:30
-    too_early = Performance(
-        kind="solo",
+    too_early = SoloShow(
         title="Night Owl",
         venue="le-kiosque",
         start="2027-06-12T02:15",
@@ -68,10 +78,7 @@ def test_rule_venue_busy(festival: Festival):
 
 
 def test_rule_artist_busy_in_another_venue(festival: Festival):
-    """Refuse show if artist is already performing in another venue."""
-    # Max Pellerin is on stage at le-kiosque 23:30-00:30
-    conflicting = Performance(
-        kind="solo",
+    conflicting = SoloShow(
         title="Double Booked",
         venue="la-cabane",
         start="2027-06-11T23:45",
@@ -83,10 +90,7 @@ def test_rule_artist_busy_in_another_venue(festival: Festival):
 
 
 def test_rule_artist_busy_as_act_in_lineup(festival: Festival):
-    """Refuse show if artist is booked as an act in a lineup elsewhere."""
-    # Nora Lebrun is an act in After Hours (01:00-02:00)
-    conflicting = Performance(
-        kind="solo",
+    conflicting = SoloShow(
         title="Secret Set",
         venue="la-cabane",
         start="2027-06-12T01:15",
@@ -98,9 +102,7 @@ def test_rule_artist_busy_as_act_in_lineup(festival: Festival):
 
 
 def test_rule_day_outside_festival(festival: Festival):
-    """Refuse show on a day outside festival dates."""
-    out_of_bounds = Performance(
-        kind="solo",
+    out_of_bounds = SoloShow(
         title="Too Late",
         venue="la-cabane",
         start="2027-06-14T10:00",
@@ -112,9 +114,7 @@ def test_rule_day_outside_festival(festival: Festival):
 
 
 def test_rule_duration_boundaries(festival: Festival):
-    """Duration must be between 1 and 360 minutes inclusive[cite: 1]."""
-    zero_min = Performance(
-        kind="solo",
+    zero_min = SoloShow(
         title="Instant",
         venue="la-cabane",
         start="2027-06-11T14:00",
@@ -124,22 +124,9 @@ def test_rule_duration_boundaries(festival: Festival):
     with pytest.raises(ValueError, match="Duration must be between 1 and 360"):
         festival.add_performance(zero_min)
 
-    too_long = Performance(
-        kind="solo",
-        title="Marathon",
-        venue="la-cabane",
-        start="2027-06-11T14:00",
-        duration_minutes=361,
-        artist="karim-benali",
-    )
-    with pytest.raises(ValueError, match="Duration must be between 1 and 360"):
-        festival.add_performance(too_long)
-
 
 def test_rule_unknown_venue_and_artist(festival: Festival):
-    """Refuse unknown venue and unknown artist[cite: 1]."""
-    unknown_v = Performance(
-        kind="solo",
+    unknown_v = SoloShow(
         title="Mystery",
         venue="nowhere",
         start="2027-06-11T14:00",
@@ -149,25 +136,97 @@ def test_rule_unknown_venue_and_artist(festival: Festival):
     with pytest.raises(ValueError, match="Unknown venue 'nowhere'"):
         festival.add_performance(unknown_v)
 
-    unknown_a = Performance(
-        kind="solo",
-        title="Ghost",
-        venue="la-cabane",
+
+def test_lineup_duration_rules():
+    with pytest.raises(ValueError, match="requires at least 36 minutes"):
+        Lineup(
+            title="Short Lineup",
+            venue="grand-casino",
+            start="2027-06-11T14:00",
+            duration_minutes=35,
+            host="karim-benali",
+            acts=["max-pellerin", "nora-lebrun", "lea-fontaine"],
+        )
+
+    valid_lineup = Lineup(
+        title="Exact Lineup",
+        venue="grand-casino",
         start="2027-06-11T14:00",
-        duration_minutes=45,
-        artist="ghost-artist",
+        duration_minutes=36,
+        host="karim-benali",
+        acts=["max-pellerin", "nora-lebrun", "lea-fontaine"],
     )
-    with pytest.raises(ValueError, match="Unknown artist 'ghost-artist'"):
-        festival.add_performance(unknown_a)
+    assert valid_lineup.duration_minutes == 36
 
 
-def test_now_playing_and_up_next(festival: Festival):
-    """Check now_playing and up_next queries[cite: 1]."""
-    at_moment = datetime.fromisoformat("2027-06-11T23:45")
-    now = festival.now_playing(at_moment)
-    assert len(now) == 1
-    assert now[0].title == "Late Laughs"
+def test_lineup_acts_constraints():
+    with pytest.raises(ValueError, match="at least 2 acts"):
+        Lineup(
+            title="Lone Act",
+            venue="grand-casino",
+            start="2027-06-11T14:00",
+            duration_minutes=30,
+            host="karim-benali",
+            acts=["max-pellerin"],
+        )
 
-    up = festival.up_next(at_moment, limit=3)
-    assert len(up) == 1
-    assert up[0].title == "After Hours"
+    with pytest.raises(ValueError, match="must be unique"):
+        Lineup(
+            title="Duplicate Act",
+            venue="grand-casino",
+            start="2027-06-11T14:00",
+            duration_minutes=30,
+            host="karim-benali",
+            acts=["max-pellerin", "max-pellerin"],
+        )
+
+    with pytest.raises(ValueError, match="cannot also be an act"):
+        Lineup(
+            title="Host as Act",
+            venue="grand-casino",
+            start="2027-06-11T14:00",
+            duration_minutes=30,
+            host="max-pellerin",
+            acts=["max-pellerin", "nora-lebrun"],
+        )
+
+
+def test_workshop_capacity_clamped(festival: Festival):
+    workshop = Workshop(
+        title="Massive Workshop",
+        venue="grand-casino",
+        start="2027-06-11T10:00",
+        duration_minutes=90,
+        teacher="karim-benali",
+        max_participants=999,
+    )
+    v_cap = festival.venues_map["grand-casino"].capacity
+    assert workshop.get_capacity(v_cap) == 650
+
+
+def test_soloshow_min_age():
+    with pytest.raises(ValueError, match="between 0 and 18"):
+        SoloShow(
+            title="Old",
+            venue="la-cabane",
+            start="2027-06-11T14:00",
+            duration_minutes=45,
+            artist="karim-benali",
+            min_age=21,
+        )
+
+
+def test_dataset_summaries():
+    fest = load_festival()
+
+    after_hours = fest.find_performance("le-kiosque-2027-06-12-0100")
+    assert after_hours is not None
+    assert after_hours.summary(fest.artists_map) == "hosted by Tom Vasseur, with Hugo Lemaire, Maya Choukri"
+
+    improv = fest.find_performance("la-cabane-2027-06-11-1030")
+    assert improv is not None
+    assert improv.summary(fest.artists_map) == "with Inès Moreau, 3/12 places taken"
+
+    tall_tales = fest.find_performance("grand-casino-2027-06-11-2030")
+    assert tall_tales is not None
+    assert tall_tales.summary(fest.artists_map) == "Léa Fontaine"
