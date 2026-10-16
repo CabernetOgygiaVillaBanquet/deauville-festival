@@ -3,8 +3,12 @@ import pytest
 
 from festival import (
     Artist,
+    ConflictError,
     Festival,
+    FestivalError,
+    InvalidValueError,
     Lineup,
+    NotFoundError,
     Performance,
     SoloShow,
     Venue,
@@ -73,7 +77,7 @@ def test_rule_venue_busy(festival: Festival):
         duration_minutes=30,
         artist="karim-benali",
     )
-    with pytest.raises(ValueError, match="Le Kiosque is busy"):
+    with pytest.raises(ConflictError, match="Le Kiosque is busy"):
         festival.add_performance(too_early)
 
 
@@ -85,7 +89,7 @@ def test_rule_artist_busy_in_another_venue(festival: Festival):
         duration_minutes=30,
         artist="max-pellerin",
     )
-    with pytest.raises(ValueError, match="Max Pellerin is on stage"):
+    with pytest.raises(ConflictError, match="Max Pellerin is on stage"):
         festival.add_performance(conflicting)
 
 
@@ -97,7 +101,7 @@ def test_rule_artist_busy_as_act_in_lineup(festival: Festival):
         duration_minutes=30,
         artist="nora-lebrun",
     )
-    with pytest.raises(ValueError, match="Nora Lebrun is on stage"):
+    with pytest.raises(ConflictError, match="Nora Lebrun is on stage"):
         festival.add_performance(conflicting)
 
 
@@ -109,7 +113,7 @@ def test_rule_day_outside_festival(festival: Festival):
         duration_minutes=60,
         artist="karim-benali",
     )
-    with pytest.raises(ValueError, match="not a day of the festival"):
+    with pytest.raises(ConflictError, match="not a day of the festival"):
         festival.add_performance(out_of_bounds)
 
 
@@ -121,7 +125,7 @@ def test_rule_duration_boundaries(festival: Festival):
         duration_minutes=0,
         artist="karim-benali",
     )
-    with pytest.raises(ValueError, match="Duration must be between 1 and 360"):
+    with pytest.raises(InvalidValueError, match="Duration must be between 1 and 360"):
         festival.add_performance(zero_min)
 
 
@@ -133,12 +137,12 @@ def test_rule_unknown_venue_and_artist(festival: Festival):
         duration_minutes=45,
         artist="karim-benali",
     )
-    with pytest.raises(ValueError, match="Unknown venue 'nowhere'"):
+    with pytest.raises(NotFoundError, match="No venue 'nowhere'"):
         festival.add_performance(unknown_v)
 
 
 def test_lineup_duration_rules():
-    with pytest.raises(ValueError, match="requires at least 36 minutes"):
+    with pytest.raises(InvalidValueError, match="requires at least 36 minutes"):
         Lineup(
             title="Short Lineup",
             venue="grand-casino",
@@ -160,7 +164,7 @@ def test_lineup_duration_rules():
 
 
 def test_lineup_acts_constraints():
-    with pytest.raises(ValueError, match="at least 2 acts"):
+    with pytest.raises(InvalidValueError, match="at least 2 acts"):
         Lineup(
             title="Lone Act",
             venue="grand-casino",
@@ -170,7 +174,7 @@ def test_lineup_acts_constraints():
             acts=["max-pellerin"],
         )
 
-    with pytest.raises(ValueError, match="must be unique"):
+    with pytest.raises(InvalidValueError, match="must be unique"):
         Lineup(
             title="Duplicate Act",
             venue="grand-casino",
@@ -180,7 +184,7 @@ def test_lineup_acts_constraints():
             acts=["max-pellerin", "max-pellerin"],
         )
 
-    with pytest.raises(ValueError, match="cannot also be an act"):
+    with pytest.raises(InvalidValueError, match="cannot also be an act"):
         Lineup(
             title="Host as Act",
             venue="grand-casino",
@@ -205,7 +209,7 @@ def test_workshop_capacity_clamped(festival: Festival):
 
 
 def test_soloshow_min_age():
-    with pytest.raises(ValueError, match="between 0 and 18"):
+    with pytest.raises(InvalidValueError, match="between 0 and 18"):
         SoloShow(
             title="Old",
             venue="la-cabane",
@@ -230,3 +234,41 @@ def test_dataset_summaries():
     tall_tales = fest.find_performance("grand-casino-2027-06-11-2030")
     assert tall_tales is not None
     assert tall_tales.summary(fest.artists_map) == "Léa Fontaine"
+
+
+def test_artist_slug_conflict(festival: Festival):
+    """Adding an artist with existing slug is refused."""
+    with pytest.raises(ConflictError, match="already exists"):
+        festival.add_artist(Artist(name="max pellerin"))
+
+
+def test_move_performance_conflict_leaves_schedule_intact(festival: Festival):
+    """A refused move does not alter the performance or the schedule."""
+    original = festival.find_performance("le-kiosque-2027-06-11-2330")
+    assert original is not None
+
+    # Move to a time conflicting with After Hours (01:00-02:00)
+    with pytest.raises(ConflictError):
+        festival.move_performance("le-kiosque-2027-06-11-2330", new_start="2027-06-12T01:15")
+
+    # Verify the show stayed at 23:30
+    still_there = festival.find_performance("le-kiosque-2027-06-11-2330")
+    assert still_there is not None
+    assert still_there.start == "2027-06-11T23:30"
+
+
+def test_workshop_duplicate_registration(festival: Festival):
+    """Registering the same participant twice is refused."""
+    ws = Workshop(
+        title="Testing Lab",
+        venue="la-cabane",
+        start="2027-06-11T10:00",
+        duration_minutes=60,
+        teacher="karim-benali",
+        max_participants=10,
+    )
+    festival.add_performance(ws)
+
+    festival.register_participant(ws.id, "Alice")
+    with pytest.raises(ConflictError, match="already registered"):
+        festival.register_participant(ws.id, "Alice")

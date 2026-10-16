@@ -2,6 +2,7 @@ from datetime import date, datetime
 import sys
 
 from festival import (
+    FestivalError,
     SoloShow,
     load_festival,
     save_festival,
@@ -11,7 +12,9 @@ from festival import (
 def print_summary(festival) -> None:
     print(f"{festival.name}")
     print(f"From {festival.first_day} to {festival.last_day}")
-    print(f"{len(festival.venues)} venues, {len(festival.artists)} artists, {len(festival.performances)} performances")
+    print(
+        f"{len(festival.venues)} venues, {len(festival.artists)} artists, {len(festival.performances)} performances"
+    )
 
 
 def print_venues(festival) -> None:
@@ -168,7 +171,7 @@ def main() -> None:
         else:
             print_usage()
 
-    except (ValueError, FileNotFoundError) as error:
+    except (FestivalError, ValueError, FileNotFoundError) as error:
         print(f"Error: {error}")
         sys.exit(1)
 
