@@ -1,5 +1,6 @@
 class FestivalError(Exception):
     """Base exception for all festival domain errors."""
+
     status_code: int = 400
 
 

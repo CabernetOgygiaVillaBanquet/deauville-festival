@@ -1,7 +1,8 @@
 import json
 from pathlib import Path
-from fastapi.testclient import TestClient
+
 import pytest
+from fastapi.testclient import TestClient
 
 from deauville.api import create_app
 from deauville.storage import JSONStorage
@@ -12,7 +13,7 @@ def client(tmp_path: Path) -> TestClient:
     """Create a test client backed by a temporary copy of festival.json."""
     src_data = Path("data/festival.json")
     test_data = tmp_path / "festival.json"
-    with open(src_data, "r", encoding="utf-8") as f:
+    with open(src_data, encoding="utf-8") as f:
         data = json.load(f)
     with open(test_data, "w", encoding="utf-8") as f:
         json.dump(data, f)
@@ -206,5 +207,7 @@ def test_workshop_registration_overflow_and_duplicate(client: TestClient):
     assert "Nicolas" in res.json()["participants"]
 
     # Duplicate registration (409)
-    res_dup = client.post(f"/api/performances/{ws_id}/register", json={"name": "Nicolas"})
+    res_dup = client.post(
+        f"/api/performances/{ws_id}/register", json={"name": "Nicolas"}
+    )
     assert res_dup.status_code == 409

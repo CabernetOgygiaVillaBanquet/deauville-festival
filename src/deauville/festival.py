@@ -87,7 +87,8 @@ class Festival:
 
         if not (1 <= new_perf.duration_minutes <= 360):
             raise InvalidValueError(
-                f"Duration must be between 1 and 360 minutes (got {new_perf.duration_minutes})."
+                f"Duration must be between 1 and 360 minutes "
+                f"(got {new_perf.duration_minutes})."
             )
 
         first_d = date.fromisoformat(self.first_day)
@@ -112,7 +113,8 @@ class Festival:
             if ex.venue == new_perf.venue:
                 if new_s < ex_e + gap and ex_s < new_e + gap:
                     raise ConflictError(
-                        f"{v_name} is busy with {ex.title} ({ex_s:%Y-%m-%d %H:%M}-{ex_e:%H:%M})."
+                        f"{v_name} is busy with {ex.title} "
+                        f"({ex_s:%Y-%m-%d %H:%M}-{ex_e:%H:%M})."
                     )
 
             ex_involved = ex.get_involved_artists()
@@ -126,7 +128,9 @@ class Festival:
         self.check_rules(perf)
         self._performances.append(perf)
 
-    def move_performance(self, perf_id: str, new_start: str, new_venue: str | None = None) -> Performance:
+    def move_performance(
+        self, perf_id: str, new_start: str, new_venue: str | None = None
+    ) -> Performance:
         perf = self.find_performance(perf_id)
         if not perf:
             raise NotFoundError(f"No performance with ID '{perf_id}'.")
@@ -159,11 +163,14 @@ class Festival:
         self._performances.pop(idx)
         return title
 
-    def register_participant(self, perf_id: str, participant_name: str) -> dict[str, Any]:
+    def register_participant(
+        self, perf_id: str, participant_name: str
+    ) -> dict[str, Any]:
         perf = self.find_performance(perf_id)
         if not perf:
             raise NotFoundError(f"No performance with ID '{perf_id}'.")
         from deauville.models import Workshop
+
         if not isinstance(perf, Workshop):
             raise InvalidValueError(f"Performance '{perf.title}' is not a workshop.")
 
@@ -173,14 +180,18 @@ class Festival:
         return perf.to_view(self.venues_map, self.artists_map)
 
     def now_playing(self, moment: datetime) -> list[Performance]:
-        current = [p for p in self._performances if p.start_datetime <= moment < p.end_datetime]
+        current = [
+            p for p in self._performances if p.start_datetime <= moment < p.end_datetime
+        ]
         return sorted(current)
 
     def up_next(self, moment: datetime, limit: int = 3) -> list[Performance]:
         upcoming = [p for p in self._performances if p.start_datetime > moment]
         return sorted(upcoming)[:limit]
 
-    def programme_for_day(self, day: date, venue_slug: str | None = None) -> list[Performance]:
+    def programme_for_day(
+        self, day: date, venue_slug: str | None = None
+    ) -> list[Performance]:
         day_str = day.isoformat()
         perfs = [p for p in self._performances if p.festival_day == day_str]
         if venue_slug:
@@ -222,8 +233,17 @@ class Festival:
             performances.append(p_cls(**raw_kwargs))
 
         extra_fields = {
-            k: v for k, v in data.items()
-            if k not in {"name", "first_day", "last_day", "venues", "artists", "performances"}
+            k: v
+            for k, v in data.items()
+            if k
+            not in {
+                "name",
+                "first_day",
+                "last_day",
+                "venues",
+                "artists",
+                "performances",
+            }
         }
 
         return cls(

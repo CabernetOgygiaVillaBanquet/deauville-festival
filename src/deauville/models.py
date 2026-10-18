@@ -1,9 +1,9 @@
+import re
+import unicodedata
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-import re
 from typing import Any
-import unicodedata
 
 from deauville.errors import ConflictError, InvalidValueError
 
@@ -165,7 +165,10 @@ class Performance(ABC):
 
         involved_slugs = self.get_involved_artists()
         artists_list = [
-            {"slug": slug, "name": artists_map[slug].name if slug in artists_map else slug}
+            {
+                "slug": slug,
+                "name": artists_map[slug].name if slug in artists_map else slug,
+            }
             for slug in involved_slugs
         ]
 
@@ -225,7 +228,9 @@ class SoloShow(Performance):
         if not self.artist:
             raise InvalidValueError("A solo show requires an artist.")
         if self.min_age is not None and not (0 <= self.min_age <= 18):
-            raise InvalidValueError(f"Minimum age must be between 0 and 18 (got {self.min_age}).")
+            raise InvalidValueError(
+                f"Minimum age must be between 0 and 18 (got {self.min_age})."
+            )
 
     def involves(self, artist_slug: str) -> str | None:
         return "solo" if self.artist == artist_slug else None
@@ -292,17 +297,22 @@ class Lineup(Performance):
 
     def check_self_rules(self) -> None:
         if len(self._acts) < 2:
-            raise InvalidValueError(f"A lineup requires at least 2 acts (got {len(self._acts)}).")
+            raise InvalidValueError(
+                f"A lineup requires at least 2 acts (got {len(self._acts)})."
+            )
         if len(set(self._acts)) != len(self._acts):
             raise InvalidValueError("Each act in a lineup must be unique.")
         if self.host in self._acts:
-            raise InvalidValueError(f"The host '{self.host}' cannot also be an act in the lineup.")
+            raise InvalidValueError(
+                f"The host '{self.host}' cannot also be an act in the lineup."
+            )
 
         n_acts = len(self._acts)
         min_duration = n_acts * 10 + (n_acts - 1) * 3
         if self.duration_minutes < min_duration:
             raise InvalidValueError(
-                f"Lineup with {n_acts} acts requires at least {min_duration} minutes (got {self.duration_minutes})."
+                f"Lineup with {n_acts} acts requires at least "
+                f"{min_duration} minutes (got {self.duration_minutes})."
             )
 
     def involves(self, artist_slug: str) -> str | None:
@@ -316,7 +326,9 @@ class Lineup(Performance):
         return [self.host] + list(self._acts)
 
     def summary(self, artists_map: dict[str, Artist]) -> str:
-        host_name = artists_map[self.host].name if self.host in artists_map else self.host
+        host_name = (
+            artists_map[self.host].name if self.host in artists_map else self.host
+        )
         act_names = [artists_map[a].name if a in artists_map else a for a in self._acts]
         return f"hosted by {host_name}, with {', '.join(act_names)}"
 
@@ -399,7 +411,11 @@ class Workshop(Performance):
         return min(self.max_participants, venue_capacity)
 
     def summary(self, artists_map: dict[str, Artist]) -> str:
-        teacher_name = artists_map[self.teacher].name if self.teacher in artists_map else self.teacher
+        teacher_name = (
+            artists_map[self.teacher].name
+            if self.teacher in artists_map
+            else self.teacher
+        )
         taken = len(self._participants)
         return f"with {teacher_name}, {taken}/{self.max_participants} places taken"
 

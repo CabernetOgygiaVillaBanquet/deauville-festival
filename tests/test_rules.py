@@ -1,4 +1,3 @@
-from datetime import datetime
 import pytest
 
 from deauville.errors import ConflictError, InvalidValueError, NotFoundError
@@ -17,7 +16,9 @@ from deauville.storage import JSONStorage, MemoryStorage
 @pytest.fixture
 def festival() -> Festival:
     venues = [
-        Venue(name="Grand Casino", capacity=650, address="Seafront", slug="grand-casino"),
+        Venue(
+            name="Grand Casino", capacity=650, address="Seafront", slug="grand-casino"
+        ),
         Venue(name="Le Kiosque", capacity=120, address="Promenade", slug="le-kiosque"),
         Venue(name="La Cabane", capacity=40, address="Beach", slug="la-cabane"),
     ]
@@ -57,7 +58,12 @@ def festival() -> Festival:
 
 def test_cannot_instantiate_abstract_performance():
     with pytest.raises(TypeError):
-        Performance(title="Direct", venue="la-cabane", start="2027-06-11T10:00", duration_minutes=30)  # type: ignore
+        Performance(
+            title="Direct",
+            venue="la-cabane",
+            start="2027-06-11T10:00",
+            duration_minutes=30,
+        )  # type: ignore
 
 
 def test_festival_day_midnight_cutoff(festival: Festival):
@@ -222,7 +228,10 @@ def test_dataset_summaries():
 
     after_hours = fest.find_performance("le-kiosque-2027-06-12-0100")
     assert after_hours is not None
-    assert after_hours.summary(fest.artists_map) == "hosted by Tom Vasseur, with Hugo Lemaire, Maya Choukri"
+    assert (
+        after_hours.summary(fest.artists_map)
+        == "hosted by Tom Vasseur, with Hugo Lemaire, Maya Choukri"
+    )
 
     improv = fest.find_performance("la-cabane-2027-06-11-1030")
     assert improv is not None
@@ -243,7 +252,9 @@ def test_move_performance_conflict_leaves_schedule_intact(festival: Festival):
     assert original is not None
 
     with pytest.raises(ConflictError):
-        festival.move_performance("le-kiosque-2027-06-11-2330", new_start="2027-06-12T01:15")
+        festival.move_performance(
+            "le-kiosque-2027-06-11-2330", new_start="2027-06-12T01:15"
+        )
 
     still_there = festival.find_performance("le-kiosque-2027-06-11-2330")
     assert still_there is not None

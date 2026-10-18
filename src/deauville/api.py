@@ -20,7 +20,9 @@ def create_app(storage: Storage | None = None) -> FastAPI:
     app = FastAPI(title="Deauville Festival du Rire API")
 
     @app.exception_handler(FestivalError)
-    async def festival_error_handler(request: Request, exc: FestivalError) -> JSONResponse:
+    async def festival_error_handler(
+        request: Request, exc: FestivalError
+    ) -> JSONResponse:
         return JSONResponse(
             status_code=exc.status_code,
             content={"detail": str(exc)},
@@ -121,8 +123,13 @@ def create_app(storage: Storage | None = None) -> FastAPI:
         up_next = festival.up_next(moment, limit=3)
         return {
             "at": moment.strftime("%Y-%m-%dT%H:%M"),
-            "now_playing": [p.to_view(festival.venues_map, festival.artists_map) for p in now_playing],
-            "up_next": [p.to_view(festival.venues_map, festival.artists_map) for p in up_next],
+            "now_playing": [
+                p.to_view(festival.venues_map, festival.artists_map)
+                for p in now_playing
+            ],
+            "up_next": [
+                p.to_view(festival.venues_map, festival.artists_map) for p in up_next
+            ],
         }
 
     @app.post("/api/artists", status_code=status.HTTP_201_CREATED)
@@ -163,7 +170,9 @@ def create_app(storage: Storage | None = None) -> FastAPI:
     @app.put("/api/performances/{perf_id}")
     def move_performance(perf_id: str, data: PerformanceMove) -> dict:
         festival = storage.load()
-        updated = festival.move_performance(perf_id, new_start=data.start, new_venue=data.venue)
+        updated = festival.move_performance(
+            perf_id, new_start=data.start, new_venue=data.venue
+        )
         storage.save(festival)
         return updated.to_view(festival.venues_map, festival.artists_map)
 
@@ -183,11 +192,15 @@ def create_app(storage: Storage | None = None) -> FastAPI:
 
     admin_path = Path("web/admin")
     if admin_path.exists():
-        app.mount("/admin", StaticFiles(directory=str(admin_path), html=True), name="admin")
+        app.mount(
+            "/admin", StaticFiles(directory=str(admin_path), html=True), name="admin"
+        )
 
     public_path = Path("web/public")
     if public_path.exists():
-        app.mount("/", StaticFiles(directory=str(public_path), html=True), name="static")
+        app.mount(
+            "/", StaticFiles(directory=str(public_path), html=True), name="static"
+        )
 
     return app
 

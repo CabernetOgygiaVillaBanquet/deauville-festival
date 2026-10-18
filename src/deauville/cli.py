@@ -1,6 +1,7 @@
 import argparse
-from datetime import date, datetime
 import sys
+from datetime import date, datetime
+
 import uvicorn
 
 from deauville.api import create_app
@@ -12,9 +13,10 @@ from deauville.storage import JSONStorage, Storage
 def print_summary(festival) -> None:
     print(f"{festival.name}")
     print(f"From {festival.first_day} to {festival.last_day}")
-    print(
-        f"{len(festival.venues)} venues, {len(festival.artists)} artists, {len(festival.performances)} performances"
-    )
+    v_count = len(festival.venues)
+    a_count = len(festival.artists)
+    p_count = len(festival.performances)
+    print(f"{v_count} venues, {a_count} artists, {p_count} performances")
 
 
 def print_venues(festival) -> None:
@@ -71,7 +73,9 @@ def print_now(festival, moment_str: str) -> None:
     try:
         target_moment = datetime.fromisoformat(moment_str)
     except ValueError as e:
-        raise ValueError(f"'{moment_str}' is not a valid ISO datetime (use YYYY-MM-DDTHH:MM).") from e
+        raise ValueError(
+            f"'{moment_str}' is not a valid ISO datetime (use YYYY-MM-DDTHH:MM)."
+        ) from e
 
     on_stage = festival.now_playing(target_moment)
     up_next = festival.up_next(target_moment, limit=3)
@@ -104,7 +108,9 @@ def add_solo_interactive(festival, storage: Storage) -> None:
     try:
         _ = datetime.fromisoformat(start_raw)
     except ValueError as e:
-        raise ValueError(f"'{start_raw}' is not a valid datetime format (YYYY-MM-DDTHH:MM).") from e
+        raise ValueError(
+            f"'{start_raw}' is not a valid datetime format (YYYY-MM-DDTHH:MM)."
+        ) from e
 
     duration_raw = input("Duration (minutes): ").strip()
     if not duration_raw.isdigit():
@@ -138,11 +144,13 @@ def run_server(storage: Storage, host: str = "127.0.0.1", port: int = 8000) -> N
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Deauville Festival du Rire CLI")
-    parser.add_argument("--data", default="data/festival.json", help="Path to festival JSON file")
+    parser.add_argument(
+        "--data", default="data/festival.json", help="Path to festival JSON file"
+    )
     subparsers = parser.add_subparsers(dest="command")
 
     subparsers.add_parser("venues", help="List venues")
-    
+
     prog_parser = subparsers.add_parser("programme", help="Show programme for a day")
     prog_parser.add_argument("day", help="Day in YYYY-MM-DD format")
 

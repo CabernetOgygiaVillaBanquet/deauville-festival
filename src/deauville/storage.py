@@ -1,5 +1,5 @@
-from abc import ABC, abstractmethod
 import json
+from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +29,7 @@ class JSONStorage(Storage):
         if not self.path.exists():
             raise NotFoundError(f"Festival file '{self.path}' not found.")
         try:
-            with open(self.path, "r", encoding="utf-8") as f:
+            with open(self.path, encoding="utf-8") as f:
                 data = json.load(f)
         except json.JSONDecodeError as e:
             raise InvalidValueError(f"Corrupted festival data file: {e}") from e
