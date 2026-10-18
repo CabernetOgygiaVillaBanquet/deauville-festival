@@ -1,20 +1,17 @@
 from datetime import datetime
 import pytest
 
-from festival import (
+from deauville.errors import ConflictError, InvalidValueError, NotFoundError
+from deauville.festival import Festival
+from deauville.models import (
     Artist,
-    ConflictError,
-    Festival,
-    FestivalError,
-    InvalidValueError,
     Lineup,
-    NotFoundError,
     Performance,
     SoloShow,
     Venue,
     Workshop,
-    load_festival,
 )
+from deauville.storage import JSONStorage, MemoryStorage
 
 
 @pytest.fixture
@@ -221,7 +218,7 @@ def test_soloshow_min_age():
 
 
 def test_dataset_summaries():
-    fest = load_festival()
+    fest = JSONStorage().load()
 
     after_hours = fest.find_performance("le-kiosque-2027-06-12-0100")
     assert after_hours is not None
@@ -237,28 +234,23 @@ def test_dataset_summaries():
 
 
 def test_artist_slug_conflict(festival: Festival):
-    """Adding an artist with existing slug is refused."""
     with pytest.raises(ConflictError, match="already exists"):
         festival.add_artist(Artist(name="max pellerin"))
 
 
 def test_move_performance_conflict_leaves_schedule_intact(festival: Festival):
-    """A refused move does not alter the performance or the schedule."""
     original = festival.find_performance("le-kiosque-2027-06-11-2330")
     assert original is not None
 
-    # Move to a time conflicting with After Hours (01:00-02:00)
     with pytest.raises(ConflictError):
         festival.move_performance("le-kiosque-2027-06-11-2330", new_start="2027-06-12T01:15")
 
-    # Verify the show stayed at 23:30
     still_there = festival.find_performance("le-kiosque-2027-06-11-2330")
     assert still_there is not None
     assert still_there.start == "2027-06-11T23:30"
 
 
 def test_workshop_duplicate_registration(festival: Festival):
-    """Registering the same participant twice is refused."""
     ws = Workshop(
         title="Testing Lab",
         venue="la-cabane",
@@ -272,3 +264,11 @@ def test_workshop_duplicate_registration(festival: Festival):
     festival.register_participant(ws.id, "Alice")
     with pytest.raises(ConflictError, match="already registered"):
         festival.register_participant(ws.id, "Alice")
+
+
+def test_memory_storage(festival: Festival):
+    """Verify storage interface works with memory storage[cite: 1]."""
+    mem = MemoryStorage(festival.to_dict())
+    loaded = mem.load()
+    assert loaded.name == festival.name
+    assert len(loaded.performances) == len(festival.performances)

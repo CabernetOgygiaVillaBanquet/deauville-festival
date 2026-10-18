@@ -54,9 +54,10 @@ wheels = [
 [[package]]
 name = "deauville-festival"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
+    { name = "pydantic" },
     { name = "uvicorn" },
 ]
 
@@ -70,6 +71,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "pydantic", specifier = ">=2.8" },
     { name = "uvicorn", specifier = ">=0.30" },
 ]
 
