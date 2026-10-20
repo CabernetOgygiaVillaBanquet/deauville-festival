@@ -133,6 +133,6 @@ uv build
 
 ## 6. Project Status & Delivery
 
-- **Status:** Complete (Level P3 achieved).
+- **Status:** Complete.
 - **Known Bugs:** None. (The naive date string slicing issue from Step 02 was resolved in Step 04 using `datetime` offset arithmetic).
 - **Packaging:** Packaged via `hatchling`; produces distributable wheel artifacts in `dist/`.
